@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SUICE Agent 运行逻辑讲解 · 详细版</title>
+  <style>
+    :root {
+      --ink: #17212b;
+      --muted: #617080;
+      --line: #dbe3ea;
+      --paper: #f5f8fa;
+      --white: #ffffff;
+      --blue: #1667a8;
+      --blue-soft: #eaf4fc;
+      --teal: #087f79;
+      --teal-soft: #e7f7f4;
+      --amber: #a66400;
+      --amber-soft: #fff4df;
+      --red: #b4463c;
+      --red-soft: #fff0ee;
+      --shadow: 0 12px 30px rgba(23, 33, 43, .08);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      line-height: 1.65;
+    }
+    a { color: inherit; }
+    .topbar {
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, .92);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      backdrop-filter: blur(10px);
+    }
+    .topbar-inner {
+      max-width: 1180px;
+      margin: auto;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+    .brand { font-weight: 800; letter-spacing: .02em; }
+    .brand span { color: var(--blue); }
+    .top-links { display: flex; gap: 16px; color: var(--muted); font-size: 13px; }
+    .top-links a { text-decoration: none; }
+    .top-links a:hover { color: var(--blue); }
+    .shell {
+      max-width: 1180px;
+      margin: auto;
+      padding: 34px 24px 72px;
+      display: grid;
+      grid-template-columns: 190px minmax(0, 1fr);
+      gap: 38px;
+    }
+    .toc {
+      position: sticky;
+      top: 78px;
+      align-self: start;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .toc-title { font-weight: 700; color: var(--ink); margin-bottom: 12px; }
+    .toc a { display: block; padding: 7px 0; text-decoration: none; border-left: 2px solid transparent; padding-left: 10px; }
+    .toc a:hover { color: var(--blue); border-left-color: var(--blue); }
+    main { min-width: 0; }
+    .eyebrow { color: var(--blue); font-weight: 800; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 7px 0 10px; font-size: clamp(30px, 4vw, 52px); line-height: 1.12; letter-spacing: -.02em; }
+    h2 { margin: 0 0 12px; font-size: 25px; line-height: 1.25; }
+    h3 { margin: 0 0 5px; font-size: 17px; }
+    p { margin: 0 0 12px; }
+    .lead { max-width: 760px; color: var(--muted); font-size: 17px; }
+    .hero {
+      border: 1px solid var(--line);
+      background: var(--white);
+      padding: 30px;
+      box-shadow: var(--shadow);
+    }
+    .thesis {
+      border-left: 4px solid var(--blue);
+      background: var(--blue-soft);
+      padding: 15px 17px;
+      margin-top: 22px;
+      font-size: 19px;
+      font-weight: 700;
+    }
+    .section { margin-top: 42px; }
+    .section-intro { color: var(--muted); max-width: 760px; }
+    .pipeline {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 20px;
+      align-items: stretch;
+    }
+    .stage {
+      position: relative;
+      min-height: 150px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      background: var(--white);
+    }
+    .stage:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -17px;
+      top: 55px;
+      color: #9aa8b4;
+      font-size: 22px;
+      z-index: 1;
+    }
+    .stage-no { color: var(--blue); font-weight: 800; font-size: 12px; }
+    .stage p { color: var(--muted); font-size: 13px; }
+    .stage.planner { border-top: 4px solid var(--blue); }
+    .stage.tools { border-top: 4px solid var(--amber); }
+    .stage.data { border-top: 4px solid var(--teal); }
+    .stage.vision { border-top: 4px solid var(--red); }
+    .stage.answer { border-top: 4px solid #5d6b7a; }
+    .roles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; }
+    .role { background: var(--white); border: 1px solid var(--line); padding: 18px; }
+    .role .symbol { width: 38px; height: 38px; display: grid; place-items: center; font-weight: 800; border-radius: 50%; margin-bottom: 12px; }
+    .role:nth-child(1) .symbol { background: var(--blue-soft); color: var(--blue); }
+    .role:nth-child(2) .symbol { background: var(--amber-soft); color: var(--amber); }
+    .role:nth-child(3) .symbol { background: var(--teal-soft); color: var(--teal); }
+    .role p { color: var(--muted); font-size: 14px; }
+    .case-nav { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 14px; }
+    .case-btn {
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: var(--white);
+      padding: 9px 13px;
+      font: inherit;
+      cursor: pointer;
+    }
+    .case-btn.active { background: var(--ink); color: var(--white); border-color: var(--ink); }
+    .case-panel { background: var(--white); border: 1px solid var(--line); padding: 22px; }
+    .case-head { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+    .case-question { font-size: 21px; font-weight: 750; }
+    .play {
+      border: 0;
+      background: var(--blue);
+      color: var(--white);
+      padding: 10px 14px;
+      font: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .play:hover { background: #0e558c; }
+    .case-note { color: var(--muted); font-size: 14px; margin: 8px 0 16px; }
+    .timeline { display: grid; gap: 8px; }
+    .timeline-row { display: grid; grid-template-columns: 32px 125px minmax(0, 1fr); gap: 10px; align-items: start; padding: 11px 12px; background: #f8fafb; border-left: 3px solid var(--line); opacity: .46; transition: opacity .25s, transform .25s, border-color .25s; }
+    .timeline-row.visible { opacity: 1; border-left-color: var(--blue); transform: translateX(3px); }
+    .timeline-row.done { border-left-color: var(--teal); }
+    .timeline-num { font-weight: 800; color: var(--blue); }
+    .timeline-label { font-weight: 700; }
+    .timeline-desc { color: var(--muted); font-size: 13px; }
+    .model-flow { display: grid; grid-template-columns: 1fr 34px 1fr 34px 1.2fr; align-items: center; gap: 10px; margin-top: 20px; }
+    .model-box { min-height: 140px; border: 1px solid var(--line); background: var(--white); padding: 17px; }
+    .model-box.image { border-top: 4px solid var(--teal); }
+    .model-box.expert { border-top: 4px solid var(--red); }
+    .model-box.host { border-top: 4px solid var(--blue); }
+    .model-arrow { text-align: center; color: #9aa8b4; font-size: 24px; }
+    .mini-flow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .pill { padding: 4px 8px; background: #eef2f5; color: #4e5f6e; font-size: 12px; }
+    .injection { margin-top: 18px; border: 1px dashed #b8c6d1; background: #fbfcfd; padding: 16px; }
+    .injection-line { display: grid; grid-template-columns: 170px 1fr; gap: 14px; padding: 8px 0; border-bottom: 1px solid #edf1f4; }
+    .injection-line:last-child { border-bottom: 0; }
+    .injection-line strong { color: var(--blue); }
+    .principles { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 18px; }
+    .principle { padding: 17px; background: var(--white); border: 1px solid var(--line); }
+    .principle p { color: var(--muted); font-size: 14px; }
+    .memory { margin-top: 22px; padding: 19px; background: var(--ink); color: white; }
+    .memory strong { color: #8fd5ff; }
+    .state-grid { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; gap: 10px; margin-top: 18px; }
+    .state { border: 1px solid var(--line); background: var(--white); padding: 15px; min-height: 142px; }
+    .state.current { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+    .state-no { color: var(--blue); font-weight: 800; font-size: 12px; }
+    .state p { color: var(--muted); font-size: 13px; }
+    .state-arrow { display: flex; align-items: center; justify-content: center; color: #9aa8b4; font-size: 20px; }
+    .evidence-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+    .evidence { padding: 18px; border: 1px solid var(--line); background: var(--white); }
+    .evidence strong { display: block; margin-bottom: 6px; }
+    .evidence p { color: var(--muted); font-size: 14px; }
+    .evidence.candidate { border-top: 4px solid var(--amber); }
+    .evidence.checked { border-top: 4px solid var(--teal); }
+    .evidence.exact { border-top: 4px solid var(--blue); }
+    .trace { margin-top: 18px; border: 1px solid var(--line); background: #17212b; color: #dce8f0; padding: 17px; font-family: Consolas, "Microsoft YaHei", monospace; font-size: 13px; overflow-x: auto; }
+    .trace .accent { color: #8fd5ff; }
+    .trace .green { color: #8be0c2; }
+    .trace .gold { color: #ffd47a; }
+    .phase-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px; }
+    .phase { border: 1px solid var(--line); background: var(--white); padding: 18px; }
+    .phase.prefill { border-top: 4px solid var(--teal); }
+    .phase.decode { border-top: 4px solid var(--blue); }
+    .phase ul { margin: 8px 0 0 18px; padding: 0; color: var(--muted); font-size: 14px; }
+    .warning { margin-top: 18px; padding: 15px 17px; background: var(--amber-soft); border-left: 4px solid var(--amber); color: #704500; }
+    .footer { margin-top: 42px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+    code { font-family: Consolas, monospace; font-size: .9em; color: #275a82; }
+    @media (max-width: 900px) {
+      .shell { grid-template-columns: 1fr; padding-top: 22px; }
+      .toc { position: static; display: flex; gap: 12px; overflow-x: auto; padding-bottom: 3px; }
+      .toc-title { display: none; }
+      .toc a { white-space: nowrap; border-left: 0; border-bottom: 2px solid transparent; padding: 4px 0; }
+      .toc a:hover { border-bottom-color: var(--blue); }
+      .pipeline { grid-template-columns: 1fr; }
+      .stage { min-height: auto; }
+      .stage:not(:last-child)::after { content: "↓"; right: auto; left: 50%; top: auto; bottom: -22px; }
+      .roles, .principles { grid-template-columns: 1fr; }
+      .state-grid, .evidence-grid, .phase-grid { grid-template-columns: 1fr; }
+      .model-flow { grid-template-columns: 1fr; }
+      .model-arrow { transform: rotate(90deg); }
+    }
+    @media (max-width: 600px) {
+      .topbar-inner { padding: 12px 16px; }
+      .top-links { display: none; }
+      .shell { padding-left: 16px; padding-right: 16px; }
+      .hero { padding: 22px 18px; }
+      .case-head { flex-direction: column; }
+      .timeline-row { grid-template-columns: 28px 1fr; }
+      .timeline-desc { grid-column: 2; }
+      .injection-line { grid-template-columns: 1fr; gap: 2px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span>SUICE</span> Agent 运行逻辑</div>
+      <nav class="top-links" aria-label="页面导航">
+        <a href="#pipeline">运行链路</a>
+        <a href="#loop">状态机</a>
+        <a href="#cases">三个例子</a>
+        <a href="#model">模型原理</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="shell">
+    <aside class="toc">
+      <div class="toc-title">本页导航</div>
+      <a href="#pipeline">一条请求怎么跑</a>
+      <a href="#roles">三个角色</a>
+      <a href="#loop">Agent 状态机</a>
+      <a href="#cases">三个运行例子</a>
+      <a href="#evidence">证据等级</a>
+      <a href="#model">模型如何看图</a>
+      <a href="#phases">Prefill / Decode</a>
+      <a href="#design">为什么这样设计</a>
+    </aside>
+
+    <main>
+      <section class="hero" id="top">
+        <div class="eyebrow">A plain-language guide</div>
+        <h1>把 SUICE Agent 想成一个会查证的遥感助手</h1>
+        <p class="lead">它不是“一个模型直接回答所有问题”，而是先判断任务，再调用数据工具，必要时让 SUICE 看图，最后把证据整理成答案。</p>
+        <div class="thesis">模型负责想和看，Agent 负责决定先做什么、再做什么。</div>
+      </section>
+
+      <section class="section" id="pipeline">
+        <h2>一条请求是怎么跑完的</h2>
+        <p class="section-intro">下面这条链就是系统的主循环。每一步都有自己的职责，Planner 不会亲自替代数据库或视觉模型。</p>
+        <div class="pipeline">
+          <article class="stage planner"><div class="stage-no">01 · 规划</div><h3>理解问题</h3><p>判断这是定位、统计、看图、变化检测，还是精确量算。</p></article>
+          <article class="stage tools"><div class="stage-no">02 · 选择</div><h3>挑工具</h3><p>决定调用区域定位、检索、POI、影像或计算工具。</p></article>
+          <article class="stage data"><div class="stage-no">03 · 取证</div><h3>先查数据</h3><p>用便宜而确定的数据库和索引先缩小范围。</p></article>
+          <article class="stage vision"><div class="stage-no">04 · 看图</div><h3>调用 SUICE</h3><p>只对关键候选影像做视觉核验，获得像素证据。</p></article>
+          <article class="stage answer"><div class="stage-no">05 · 收尾</div><h3>汇总答案</h3><p>区分候选、确认、估算和精确值，再向用户说明。</p></article>
+        </div>
+      </section>
+
+      <section class="section" id="roles">
+        <h2>三个角色，各自做什么</h2>
+        <div class="roles">
+          <article class="role"><div class="symbol">脑</div><h3>规划器</h3><p>像项目负责人。它读取问题和已有结果，每轮只决定一个下一步动作，直到证据够用。</p></article>
+          <article class="role"><div class="symbol">箱</div><h3>工具箱</h3><p>像一组专业部门：地图负责定位，数据库负责统计，检索负责找候选，量算工具负责算面积和长度。</p></article>
+          <article class="role"><div class="symbol">眼</div><h3>SUICE 视觉模型</h3><p>像遥感专家。它把图片转成空间证据，再交给语言模型组织成可读的回答。</p></article>
+        </div>
+      </section>
+
+      <section class="section" id="loop">
+        <h2>Agent 不是一次回答，而是一台状态机</h2>
+        <p class="section-intro">每次工具返回结果后，系统都会回到“判断下一步”这一状态。它不会因为找到一个候选就自动宣布结论。</p>
+        <div class="state-grid">
+          <article class="state current"><div class="state-no">STATE 01</div><h3>接收问题</h3><p>提取地点、目标、时间、范围和用户想要的结果。</p></article>
+          <div class="state-arrow">→</div>
+          <article class="state"><div class="state-no">STATE 02</div><h3>选择动作</h3><p>Planner 输出一个工具调用，或判断当前证据已经足够。</p></article>
+          <div class="state-arrow">→</div>
+          <article class="state"><div class="state-no">STATE 03</div><h3>执行并观察</h3><p>工具返回结果，系统记录成功、失败、候选和核验状态。</p></article>
+          <div class="state-arrow">→</div>
+          <article class="state"><div class="state-no">STATE 04</div><h3>收尾或继续</h3><p>证据充分就输出答案；证据不足就带着新观测再规划一次。</p></article>
+        </div>
+        <div class="trace"><span class="accent">用户：</span>海淀区附近有哪些篮球场？<br><span class="gold">Planner：</span>{"tool":"aoi.resolve","args":{"name":"海淀区"}}<br><span class="green">工具：</span>区域已定位，得到中心坐标和范围<br><span class="gold">Planner：</span>{"tool":"retrieve.by_concept","args":{"concept":"篮球场","aoi":"已定位区域"}}<br><span class="green">工具：</span>返回 20 个候选位置，尚未全部核验<br><span class="gold">Planner：</span>{"tool":"retrieve.verify","args":{"k":10,"backend":"suice"}}<br><span class="green">工具：</span>核验 10 块影像，确认 5 块存在目标<br><span class="accent">最终：</span>输出“5 个已确认，其他为未核验候选”。</div>
+      </section>
+
+      <section class="section" id="cases">
+        <h2>三个例子：Agent 会怎样行动</h2>
+        <p class="section-intro">点击一个问题，再点击“播放本轮”，逐步查看 Agent 如何从问题走到答案。</p>
+        <div class="case-nav" role="tablist" aria-label="运行案例">
+          <button class="case-btn active" data-case="visual" role="tab">看一张图</button>
+          <button class="case-btn" data-case="city" role="tab">城市范围搜索</button>
+          <button class="case-btn" data-case="measure" role="tab">面积和长度</button>
+        </div>
+        <div class="case-panel">
+          <div class="case-head">
+            <div>
+              <div class="eyebrow">当前案例</div>
+              <div class="case-question" id="case-question">“这张图里有没有篮球场？”</div>
+            </div>
+            <button class="play" id="play-case">▶ 播放本轮</button>
+          </div>
+          <p class="case-note" id="case-note">问题只需要看一张图，Agent 会直接进入视觉路径。</p>
+          <div class="timeline" id="timeline"></div>
+        </div>
+      </section>
+
+      <section class="section" id="evidence">
+        <h2>Agent 为什么要区分三种证据</h2>
+        <p class="section-intro">遥感查询中最容易出错的地方，是把“搜到过”误写成“确认存在”。Agent 会把证据分层保存。</p>
+        <div class="evidence-grid">
+          <article class="evidence candidate"><strong>候选证据</strong><p>来自索引、SAE 或相似度检索。说明“可能相关”，适合用来缩小范围。</p></article>
+          <article class="evidence checked"><strong>视觉核验证据</strong><p>SUICE 实际看过对应影像，并给出“有、没有或不确定”的判断。</p></article>
+          <article class="evidence exact"><strong>确定性证据</strong><p>来自 POI、行政边界、像素量算等规则工具，适合支撑数字和位置。</p></article>
+        </div>
+        <div class="warning"><strong>回答边界：</strong>如果只检查了部分候选，Agent 应该说“已核验的部分中确认了……”，不能说成整个区域的完整总数。</div>
+      </section>
+
+      <section class="section" id="model">
+        <h2>SUICE 模型到底怎样看图</h2>
+        <p class="section-intro">SUICE 不替换语言模型，而是给语言模型增加一条遥感侧输入。语言能力继续由宿主模型负责。</p>
+        <div class="model-flow">
+          <article class="model-box image"><h3>图片</h3><p>遥感影像被切成许多空间小块。</p><div class="mini-flow"><span class="pill">道路</span><span class="pill">建筑</span><span class="pill">绿地</span><span class="pill">水体</span></div></article>
+          <div class="model-arrow">→</div>
+          <article class="model-box expert"><h3>DINOv3 + EO 专家</h3><p>提取每个小块的视觉特征，识别空间结构和地物模式。</p><div class="mini-flow"><span class="pill">空间特征</span><span class="pill">目标形状</span><span class="pill">纹理关系</span></div></article>
+          <div class="model-arrow">→</div>
+          <article class="model-box host"><h3>Qwen 宿主</h3><p>把问题、已有上下文和视觉证据结合起来，生成自然语言答案。</p><div class="mini-flow"><span class="pill">问题理解</span><span class="pill">证据整合</span><span class="pill">答案生成</span></div></article>
+        </div>
+        <div class="injection">
+          <div class="injection-line"><strong>普通文字</strong><span>沿用 Qwen 原来的处理路径，语言能力保持不变。</span></div>
+          <div class="injection-line"><strong>视觉插槽</strong><span>问题后面放置几个内部的 <code>&lt;EO_TILE&gt;</code> 位置，表示“这里接收图片证据”。</span></div>
+          <div class="injection-line"><strong>关键层注入</strong><span>EO 专家只在少数几个关键层加入额外信息，不改写整个模型。</span></div>
+          <div class="injection-line"><strong>继续生成</strong><span>模型利用已经写入的视觉证据继续生成文字，直到形成答案。</span></div>
+        </div>
+      </section>
+
+      <section class="section" id="phases">
+        <h2>一次看图生成分成两个阶段</h2>
+        <p class="section-intro">理解这一点，就能明白为什么 SUICE 可以把视觉证据接入 Qwen，又不必改写整个生成流程。</p>
+        <div class="phase-grid">
+          <article class="phase prefill"><h3>第一阶段：Prefill，先读完整问题和图片</h3><ul><li>读取问题、上下文和 <code>&lt;EO_TILE&gt;</code> 视觉插槽。</li><li>DINOv3 产生图片的空间 patch 特征。</li><li>EO 专家在少数关键层计算视觉增量。</li><li>视觉增量写入当前序列的隐藏状态和缓存。</li></ul></article>
+          <article class="phase decode"><h3>第二阶段：Decode，逐字生成答案</h3><ul><li>模型根据已经读入的上下文逐 token 生成。</li><li>新生成的普通文字不再重复计算 EO 专家。</li><li>语言模型继续负责连贯表达、格式和结论。</li><li>如果需要更多证据，则由 Agent 开启下一轮工具调用。</li></ul></article>
+        </div>
+      </section>
+
+      <section class="section" id="design">
+        <h2>为什么要这样设计</h2>
+        <div class="principles">
+          <article class="principle"><h3>先筛选，再看图</h3><p>城市范围可能有成千上万张影像。先用数据库和索引找候选，再让 SUICE 精看，速度和成本都更可控。</p></article>
+          <article class="principle"><h3>能计算的不要猜</h3><p>面积、长度、距离交给确定性工具。SUICE 判断目标位置，工具负责把数字算准。</p></article>
+          <article class="principle"><h3>证据不够就继续查</h3><p>Agent 会把工具结果放回上下文。如果发现只是候选而没有核验，它可以继续调用视觉工具。</p></article>
+          <article class="principle"><h3>保留原模型能力</h3><p>SUICE 是加法式专家。没有遥感证据时，宿主模型仍按原来的语言路径工作。</p></article>
+        </div>
+        <div class="memory"><strong>一句话记忆：</strong>Planner 决定“做什么”，工具执行“怎么查”，SUICE 负责“看图”，宿主模型负责“说清楚”。</div>
+      </section>
+
+      <div class="footer">本页是 SUICE Agent 运行逻辑的详细讲解，重点是运行过程、证据管理和模型结构设计。可直接分享本 HTML 文件或部署到公网。</div>
+    </main>
+  </div>
+
+  <script>
+    const cases = {
+      visual: {
+        question: '“这张图里有没有篮球场？”',
+        note: '问题只需要看一张图，Agent 会直接进入视觉路径。',
+        steps: [
+          ['规划器', '判断这是视觉问题，需要读取图片证据。'],
+          ['SUICE', 'DINOv3 提取空间特征，EO 专家寻找规则场地和纹理。'],
+          ['宿主模型', '把问题和视觉证据结合，生成“有/没有 + 依据”。'],
+          ['最终答案', '输出可读结论，并保留必要的不确定性。']
+        ]
+      },
+      city: {
+        question: '“海淀区附近有哪些篮球场？”',
+        note: '范围问题先用数据层缩小搜索空间，再让 SUICE 核验关键候选。',
+        steps: [
+          ['规划器', '识别范围“海淀区”和目标“篮球场”。'],
+          ['数据工具', '定位区域，从检索库召回一批候选位置。'],
+          ['SUICE', '逐块查看候选影像，确认哪些位置真的像篮球场。'],
+          ['规划器', '区分候选数、确认数和未核验数。'],
+          ['最终答案', '汇总位置和证据范围，不把候选误报成全部设施。']
+        ]
+      },
+      measure: {
+        question: '“图中的场地大约有多大？”',
+        note: '视觉模型负责找到目标，几何工具负责把像素换算成面积。',
+        steps: [
+          ['SUICE', '判断场地边界，给出目标区域。'],
+          ['数据工具', '读取影像分辨率，例如每像素代表多少米。'],
+          ['量算工具', '用像素面积 × 分辨率²，计算平方米。'],
+          ['宿主模型', '把计算值和视觉描述组织成答案。']
+        ]
+      }
+    };
+    const buttons = [...document.querySelectorAll('.case-btn')];
+    const question = document.querySelector('#case-question');
+    const note = document.querySelector('#case-note');
+    const timeline = document.querySelector('#timeline');
+    const play = document.querySelector('#play-case');
+    let current = 'visual';
+    let progress = 0;
+    let timer = null;
+
+    function renderTimeline() {
+      timeline.innerHTML = cases[current].steps.map((step, i) => `
+        <div class="timeline-row ${i < progress ? 'visible done' : ''}">
+          <div class="timeline-num">${i + 1}</div>
+          <div class="timeline-label">${step[0]}</div>
+          <div class="timeline-desc">${step[1]}</div>
+        </div>`).join('');
+    }
+    function selectCase(name) {
+      current = name;
+      progress = 0;
+      buttons.forEach(btn => btn.classList.toggle('active', btn.dataset.case === name));
+      question.textContent = cases[name].question;
+      note.textContent = cases[name].note;
+      play.textContent = '▶ 播放本轮';
+      renderTimeline();
+    }
+    function playCase() {
+      if (timer) return;
+      progress = 0;
+      renderTimeline();
+      play.textContent = '运行中…';
+      timer = setInterval(() => {
+        progress += 1;
+        renderTimeline();
+        if (progress >= cases[current].steps.length) {
+          clearInterval(timer);
+          timer = null;
+          play.textContent = '↻ 再播一次';
+        }
+      }, 620);
+    }
+    buttons.forEach(btn => btn.addEventListener('click', () => {
+      if (timer) { clearInterval(timer); timer = null; }
+      selectCase(btn.dataset.case);
+    }));
+    play.addEventListener('click', playCase);
+    selectCase('visual');
+  </script>
+</body>
+</html>
